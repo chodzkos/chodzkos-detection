@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chodzkos-detection"
-version = "0.1.0"
+version = "0.1.1"
 description = "Uniwersalne sondy narzędzi CLI i usług HTTP (stdlib-only, bez Qt i bez torcha)."
 readme = "README.md"
 requires-python = ">=3.10"
