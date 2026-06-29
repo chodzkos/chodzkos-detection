@@ -1,0 +1,39 @@
+# Hooki NARZĘDZIOWE (ruff/ruff-format/mypy) wołają `uv run --extra dev` — wymagają `uv` na PATH.
+# --extra dev konieczne, bo ruff/mypy żyją w [project.optional-dependencies].dev (pakiet stdlib-only,
+# zero runtime deps). uv run = to samo środowisko co bramki, więc hook = CI, bez przypiętych wersji.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (linter)
+        entry: uv run --extra dev ruff check --fix .
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+      - id: ruff-format
+        name: ruff (formatter)
+        entry: uv run --extra dev ruff format .
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+      - id: mypy
+        name: mypy (type check)
+        entry: uv run --extra dev mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
