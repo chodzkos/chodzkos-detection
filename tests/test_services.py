@@ -17,8 +17,12 @@ class _FakeResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, amt: int | None = None) -> bytes:
+        # Odwzorowuje kontrakt http.client.HTTPResponse.read(amt): przy podanym
+        # limicie zwraca co najwyżej `amt` bajtów (produkcja czyta MAX_BYTES + 1).
+        if amt is None or amt < 0:
+            return self._payload
+        return self._payload[:amt]
 
 
 def test_probe_http_service_returns_parsed_json(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,6 +42,38 @@ def test_probe_http_service_returns_parsed_json(monkeypatch: pytest.MonkeyPatch)
 def test_probe_http_service_false_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_urlopen(*_args: object, **_kwargs: object) -> object:
         raise OSError("server down")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert services.probe_http_service("http://example/api") == {
+        "available": False,
+        "data": None,
+    }
+
+
+def test_probe_http_service_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake_urlopen(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError("urlopen nie powinno być wołane dla schematu file://")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert services.probe_http_service("file:///etc/passwd") == {
+        "available": False,
+        "data": None,
+    }
+    # Kluczowe: odrzucenie następuje przed otwarciem zasobu (brak SSRF/odczytu pliku).
+    assert called is False
+
+
+def test_probe_http_service_rejects_oversized_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    oversized = b"[" + b"0," * services.MAX_BYTES  # > MAX_BYTES bajtów
+
+    def fake_urlopen(url: str, *, timeout: int) -> _FakeResponse:
+        return _FakeResponse(oversized)
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 

@@ -6,10 +6,13 @@ nie rzucają wyjątków.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _default_version_parser(output: str) -> str:
@@ -55,8 +58,8 @@ def probe_tool(
         )
         result["version"] = parser(proc.stdout or proc.stderr)
         result["available"] = True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("probe_tool(%r) nieudane: %s", name, exc)
     return result
 
 
@@ -87,8 +90,8 @@ def check_tesseract() -> dict[str, Any]:
             for ln in (lang_proc.stdout or lang_proc.stderr).splitlines()
             if ln.strip() and not ln.startswith("List")
         ]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("check_tesseract --list-langs nieudane: %s", exc)
     return result
 
 
