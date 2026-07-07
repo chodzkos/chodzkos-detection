@@ -43,19 +43,27 @@ def probe_tool(
         ``available=False`` zamiast rzucać (jak reszta modułu).
     """
     result: dict[str, Any] = {"available": False, "version": ""}
-    if shutil.which(name) is None:
+    resolved = shutil.which(name)
+    if resolved is None:
         return result
     if not version_args:
         result["available"] = True
         return result
     parser = version_parser or _default_version_parser
     try:
+        # Uruchamiamy rozwiązaną ścieżkę z which, nie gołą nazwę — brak ponownego
+        # przeszukiwania PATH i mniejsze ryzyko podmiany binarki między which a run.
         proc = subprocess.run(
-            [name, *version_args],
+            [resolved, *version_args],
             capture_output=True,
             text=True,
             timeout=5,
         )
+        # Niezerowy kod = wywołanie wersji zawiodło, choć binarka jest w PATH.
+        # Kontrakt (jak reszta modułu) obiecuje wtedy available=False, version="".
+        if proc.returncode != 0:
+            logger.debug("probe_tool(%r): niezerowy kod wyjścia %d", name, proc.returncode)
+            return result
         result["version"] = parser(proc.stdout or proc.stderr)
         result["available"] = True
     except Exception as exc:
@@ -77,14 +85,25 @@ def check_tesseract() -> dict[str, Any]:
     }
     if not probe["available"]:
         return result
+    # probe.available=True gwarantuje obecność w PATH; which zwraca tę samą
+    # rozwiązaną ścieżkę, którą przekazujemy do subprocessu (spójnie z probe_tool).
+    tesseract = shutil.which("tesseract")
+    if tesseract is None:
+        return result
     # --list-langs to rozszerzenie ponad generyczną sondę (sonda „bogatsza").
     try:
         lang_proc = subprocess.run(
-            ["tesseract", "--list-langs"],
+            [tesseract, "--list-langs"],
             capture_output=True,
             text=True,
             timeout=5,
         )
+        # Niezerowy kod = nie ufamy wyjściu; zostawiamy languages=[] zamiast parsować błąd.
+        if lang_proc.returncode != 0:
+            logger.debug(
+                "check_tesseract --list-langs: niezerowy kod wyjścia %d", lang_proc.returncode
+            )
+            return result
         result["languages"] = [
             ln.strip()
             for ln in (lang_proc.stdout or lang_proc.stderr).splitlines()

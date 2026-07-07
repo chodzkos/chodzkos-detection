@@ -40,7 +40,8 @@ def test_probe_tool_parses_version(monkeypatch: pytest.MonkeyPatch) -> None:
         text: bool,
         timeout: int,
     ) -> subprocess.CompletedProcess[str]:
-        assert command == ["widget", "--version"]
+        # Subprocess dostaje ROZWIĄZANĄ ścieżkę z which, nie gołą nazwę.
+        assert command == ["/usr/bin/widget", "--version"]
         assert timeout == 5
         return subprocess.CompletedProcess(command, 0, stdout="widget 2.4.1\nfoo\n")
 
@@ -49,6 +50,46 @@ def test_probe_tool_parses_version(monkeypatch: pytest.MonkeyPatch) -> None:
     assert tools.probe_tool("widget", ["--version"]) == {
         "available": True,
         "version": "2.4.1",
+    }
+
+
+def test_probe_tool_runs_resolved_path_from_which(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: "/opt/custom/bin/widget")
+    seen: dict[str, list[str]] = {}
+
+    def fake_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        seen["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="widget 1.0\n")
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+
+    tools.probe_tool("widget", ["--version"])
+
+    # Pełna ścieżka z which, a nie gołe "widget".
+    assert seen["command"][0] == "/opt/custom/bin/widget"
+
+
+def test_probe_tool_unavailable_when_returncode_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: "/usr/bin/widget")
+
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        # Narzędzie jest w PATH, ale --version kończy się kodem != 0 (bez wyjątku)
+        # i wypisuje coś na stderr — nie wolno tego raportować jako dostępne.
+        return subprocess.CompletedProcess(
+            ["/usr/bin/widget", "--version"], 1, stdout="", stderr="unknown flag --version\n"
+        )
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+
+    assert tools.probe_tool("widget", ["--version"]) == {
+        "available": False,
+        "version": "",
     }
 
 
@@ -91,9 +132,10 @@ def test_check_tesseract_returns_version_and_languages(monkeypatch: pytest.Monke
         text: bool,
         timeout: int,
     ) -> subprocess.CompletedProcess[str]:
-        if command == ["tesseract", "--version"]:
+        # Oba wywołania idą na rozwiązaną ścieżkę z which, nie na gołą nazwę.
+        if command == ["/usr/bin/tesseract", "--version"]:
             return subprocess.CompletedProcess(command, 0, stdout="tesseract 5.3.0\n")
-        if command == ["tesseract", "--list-langs"]:
+        if command == ["/usr/bin/tesseract", "--list-langs"]:
             return subprocess.CompletedProcess(
                 command, 0, stdout="List of available languages\neng\npol\n"
             )
@@ -104,6 +146,31 @@ def test_check_tesseract_returns_version_and_languages(monkeypatch: pytest.Monke
     result = tools.check_tesseract()
 
     assert result == {"available": True, "version": "5.3.0", "languages": ["eng", "pol"]}
+
+
+def test_check_tesseract_ignores_langs_on_nonzero_returncode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: "/usr/bin/tesseract")
+
+    def fake_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        if command == ["/usr/bin/tesseract", "--version"]:
+            return subprocess.CompletedProcess(command, 0, stdout="tesseract 5.3.0\n")
+        # --list-langs kończy się kodem != 0 → nie parsujemy wyjścia, languages=[].
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="boom\n")
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+
+    result = tools.check_tesseract()
+
+    # Wersja pozostaje (--version zwróciło 0), języki puste (błędny --list-langs).
+    assert result == {"available": True, "version": "5.3.0", "languages": []}
 
 
 def test_check_tesseract_false_when_binary_missing(monkeypatch: pytest.MonkeyPatch) -> None:
