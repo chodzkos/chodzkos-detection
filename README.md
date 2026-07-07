@@ -40,3 +40,8 @@ uv run --extra dev pytest
 uv run --extra dev ruff check .
 uv run --extra dev mypy src/
 ```
+
+`uv.lock` jest **śledzony w repo** (spójnie z `gui-kit`): pre-commit i CI wołają
+`uv run --extra dev`, więc zablokowany toolchain daje reprodukowalne środowisko
+dev/CI. `uv sync --extra dev` odtwarza je dokładnie; aktualizacje zależności idą
+przez Dependabota (ekosystem `pip`).
