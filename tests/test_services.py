@@ -103,3 +103,39 @@ def test_check_ollama_false_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     assert services.check_ollama() == {"available": False, "models": []}
+
+
+def test_check_ollama_skips_entries_without_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Nietypowy kształt: wpisy bez klucza "name", z pustą/nietekstową nazwą oraz
+    # element nie-słownikowy. Serwer odpowiada (200), więc available=True, ale do
+    # listy trafiają wyłącznie poprawne nazwy — bez rzucania (usunięty martwy try).
+    payload = (
+        b'{"models": ['
+        b'{"name": "qwen2.5:14b"},'
+        b'{"size": 123},'  # brak klucza "name"
+        b'{"name": ""},'  # pusta nazwa
+        b'{"name": null},'  # nazwa nie-tekstowa
+        b'"llama3",'  # wpis nie-słownikowy
+        b'{"name": "phi3"}'
+        b"]}"
+    )
+
+    def fake_urlopen(url: str, *, timeout: int) -> _FakeResponse:
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert services.check_ollama() == {
+        "available": True,
+        "models": ["qwen2.5:14b", "phi3"],
+    }
+
+
+def test_check_ollama_available_with_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    # "models" nie jest listą (tu: null) — nie iterujemy po None, zwracamy pustą listę.
+    def fake_urlopen(url: str, *, timeout: int) -> _FakeResponse:
+        return _FakeResponse(b'{"models": null}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert services.check_ollama() == {"available": True, "models": []}
