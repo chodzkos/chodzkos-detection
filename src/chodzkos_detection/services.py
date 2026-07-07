@@ -65,12 +65,20 @@ def check_ollama() -> dict[str, Any]:
         Słownik z kluczami: available (bool), models (list[str]).
     """
     result: dict[str, Any] = {"available": False, "models": []}
-    try:
-        probe = probe_http_service("http://localhost:11434/api/tags")
-        if probe["available"]:
-            data = probe["data"] or {}
-            result["models"] = [m["name"] for m in data.get("models", [])]
-            result["available"] = True
-    except Exception as exc:
-        logger.debug("check_ollama nieudane: %s", exc)
+    # probe_http_service jest z kontraktu bezrzutowe (zwraca available=False zamiast
+    # rzucać), więc zewnętrzny try/except byłby tu martwy. Zamiast na nim polegać,
+    # defensywnie wyłuskujemy nazwy modeli: tolerujemy nietypowy kształt danych
+    # (data nie-dict, wpisy nie-dict, brak klucza "name") pomijając złe wpisy.
+    probe = probe_http_service("http://localhost:11434/api/tags")
+    if not probe["available"]:
+        return result
+    data = probe["data"]
+    raw_models = data.get("models") if isinstance(data, dict) else None
+    models = raw_models if isinstance(raw_models, list) else []
+    result["models"] = [
+        m["name"]
+        for m in models
+        if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"]
+    ]
+    result["available"] = True
     return result
