@@ -1,0 +1,46 @@
+# CI — serwerowe odzwierciedlenie bramek z .pre-commit-config.yaml (ruff / ruff-format / mypy)
+# plus pytest. Pakiet jest stdlib-only, więc bez Qt/tk — cała robota to `uv run` w środowisku
+# z [project.optional-dependencies].dev (to samo, co wołają lokalne hooki). Akcje przypięte do
+# pełnych commit-SHA (Dependabot: ekosystem github-actions podbija je co tydzień).
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pakiet deklaruje requires-python >=3.10 — testujemy cały zadeklarowany zakres.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1 # v8.3.1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff (linter)
+        run: uv run ruff check .
+
+      - name: Ruff (formatter)
+        run: uv run ruff format --check .
+
+      - name: Mypy (type check)
+        run: uv run mypy src/
+
+      - name: Pytest
+        run: uv run pytest
