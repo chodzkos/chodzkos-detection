@@ -44,5 +44,7 @@ jobs:
 
       - name: Pytest (+ pokrycie)
         # Raport pokrycia w logu (term-missing pokazuje niepokryte linie, m.in.
-        # gałęzie except w sondach). Na razie BEZ --cov-fail-under — najpierw mierzymy.
-        run: uv run pytest --cov=src/chodzkos_detection --cov-report=term-missing
+        # gałęzie except w sondach). Próg 90% jako floor — zmierzone 96%; margines
+        # na drobne wahania. Podnieść do 95% po dołożeniu testu na except
+        # `check_tesseract --list-langs` (tools.py:112-113).
+        run: uv run pytest --cov=src/chodzkos_detection --cov-report=term-missing --cov-fail-under=90
