@@ -8,7 +8,8 @@ dist/
 
 # Virtualenv / uv
 .venv/
-uv.lock
+# uv.lock jest CELOWO śledzony (spójnie z gui-kit) — pre-commit i CI wołają
+# `uv run --extra dev`, więc zablokowany toolchain = reprodukowalne dev/CI.
 
 # Test / type cache
 .pytest_cache/
