@@ -42,5 +42,7 @@ jobs:
       - name: Mypy (type check)
         run: uv run mypy src/
 
-      - name: Pytest
-        run: uv run pytest
+      - name: Pytest (+ pokrycie)
+        # Raport pokrycia w logu (term-missing pokazuje niepokryte linie, m.in.
+        # gałęzie except w sondach). Na razie BEZ --cov-fail-under — najpierw mierzymy.
+        run: uv run pytest --cov=src/chodzkos_detection --cov-report=term-missing
