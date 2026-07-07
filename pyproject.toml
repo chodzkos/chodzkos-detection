@@ -31,7 +31,15 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+# "S" (flake8-bandit) pilnuje m.in. S310 — niebezpiecznego urlopen z dowolnym schematem.
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Testy z natury używają `assert` (S101) — to mechanizm pytest, nie luka bezpieczeństwa.
+"tests/**" = ["S101"]
+# tools.py celowo woła zewnętrzne binarki (subprocess) z PATH — sonda narzędzi CLI to
+# istota pakietu; wejście to nazwy narzędzi z kodu, nie dane użytkownika.
+"src/chodzkos_detection/tools.py" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.10"
