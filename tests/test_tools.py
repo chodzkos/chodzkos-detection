@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -39,6 +40,7 @@ def test_probe_tool_parses_version(monkeypatch: pytest.MonkeyPatch) -> None:
         capture_output: bool,
         text: bool,
         timeout: int,
+        creationflags: int = 0,
     ) -> subprocess.CompletedProcess[str]:
         # Subprocess dostaje ROZWIĄZANĄ ścieżkę z which, nie gołą nazwę.
         assert command == ["/usr/bin/widget", "--version"]
@@ -63,6 +65,7 @@ def test_probe_tool_runs_resolved_path_from_which(monkeypatch: pytest.MonkeyPatc
         capture_output: bool,
         text: bool,
         timeout: int,
+        creationflags: int = 0,
     ) -> subprocess.CompletedProcess[str]:
         seen["command"] = command
         return subprocess.CompletedProcess(command, 0, stdout="widget 1.0\n")
@@ -131,6 +134,7 @@ def test_check_tesseract_returns_version_and_languages(monkeypatch: pytest.Monke
         capture_output: bool,
         text: bool,
         timeout: int,
+        creationflags: int = 0,
     ) -> subprocess.CompletedProcess[str]:
         # Oba wywołania idą na rozwiązaną ścieżkę z which, nie na gołą nazwę.
         if command == ["/usr/bin/tesseract", "--version"]:
@@ -159,6 +163,7 @@ def test_check_tesseract_ignores_langs_on_nonzero_returncode(
         capture_output: bool,
         text: bool,
         timeout: int,
+        creationflags: int = 0,
     ) -> subprocess.CompletedProcess[str]:
         if command == ["/usr/bin/tesseract", "--version"]:
             return subprocess.CompletedProcess(command, 0, stdout="tesseract 5.3.0\n")
@@ -214,3 +219,58 @@ def test_check_tools_aggregates_probes(monkeypatch: pytest.MonkeyPatch) -> None:
         "poppler": True,
         "pandoc": False,
     }
+
+
+def test_find_tool_prefers_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: "/usr/bin/widget")
+    fallback = tmp_path / "widget"
+    fallback.write_text("x", encoding="utf-8")
+
+    # PATH wygrywa — extra_paths ignorowane, gdy which coś znajdzie.
+    assert tools.find_tool("widget", [fallback]) == "/usr/bin/widget"
+
+
+def test_find_tool_falls_back_to_extra_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: None)
+    missing = tmp_path / "nope" / "widget.exe"
+    present = tmp_path / "widget.exe"
+    present.write_text("x", encoding="utf-8")
+
+    # Poza PATH: pierwszy ISTNIEJĄCY plik z extra_paths, w podanej kolejności.
+    assert tools.find_tool("widget", [missing, present]) == str(present)
+
+
+def test_find_tool_none_when_nowhere(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _command: None)
+
+    assert tools.find_tool("widget", [tmp_path / "absent"]) is None
+    assert tools.find_tool("widget") is None
+
+
+def test_probe_tool_uses_explicit_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_which(_command: str) -> str | None:
+        raise AssertionError("which nie powinien być wołany, gdy podano executable")
+
+    monkeypatch.setattr(tools.shutil, "which", fail_which)
+    seen: dict[str, list[str]] = {}
+
+    def fake_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+        creationflags: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
+        seen["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="widget 3.1\n")
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+
+    # executable = pełna ścieżka (np. z find_tool) — pomija shutil.which.
+    result = tools.probe_tool("widget", ["--version"], executable="/opt/Calibre2/widget")
+
+    assert result == {"available": True, "version": "3.1"}
+    assert seen["command"][0] == "/opt/Calibre2/widget"

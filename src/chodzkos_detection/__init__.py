@@ -16,10 +16,11 @@ from chodzkos_detection.tools import (
     check_poppler,
     check_tesseract,
     check_tools,
+    find_tool,
     probe_tool,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "__version__",
@@ -28,6 +29,7 @@ __all__ = [
     "check_poppler",
     "check_tesseract",
     "check_tools",
+    "find_tool",
     "probe_http_service",
     "probe_tool",
 ]

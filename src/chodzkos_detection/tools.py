@@ -9,10 +9,46 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# CREATE_NO_WINDOW tłumi mignięcie okna konsoli przy subprocess na Windows (widoczne, gdy
+# wołający jest gui-scriptem bez własnej konsoli). Poza Windows = 0, więc przekazujemy
+# bezwarunkowo. `if`-instrukcja (nie wyrażenie) — tak mypy zawęża sys.platform i sprawdza
+# CREATE_NO_WINDOW tylko pod win32, gdzie atrybut istnieje.
+if sys.platform == "win32":  # pragma: no cover - gałąź platformowa (CI jest na Linuksie)
+    _SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW
+else:
+    _SUBPROCESS_FLAGS = 0
+
+
+def find_tool(name: str, extra_paths: Sequence[str | Path] = ()) -> str | None:
+    """Znajduje pełną ścieżkę narzędzia: najpierw PATH (``shutil.which``), potem ``extra_paths``.
+
+    Zwraca pełną ścieżkę pierwszego istniejącego pliku albo ``None``. Przydatne dla narzędzi
+    instalowanych poza PATH (np. Calibre w ``C:\\Calibre2``) — wołający dokłada kandydatów
+    (z rejestru / znanych katalogów), a kolejność „PATH-first" zachowuje priorytet instalacji
+    widocznej w środowisku.
+
+    Args:
+        name: nazwa binarki szukanej najpierw przez ``shutil.which``.
+        extra_paths: dodatkowi kandydaci (pełne ścieżki), sprawdzani po PATH w podanej kolejności.
+
+    Returns:
+        Pełna ścieżka do istniejącego pliku albo ``None``, gdy nie znaleziono nigdzie.
+    """
+    in_path = shutil.which(name)
+    if in_path is not None:
+        return in_path
+    for candidate in extra_paths:
+        path = Path(candidate)
+        if path.is_file():
+            return str(path)
+    return None
 
 
 def _default_version_parser(output: str) -> str:
@@ -27,23 +63,28 @@ def probe_tool(
     name: str,
     version_args: list[str] | None = None,
     version_parser: Callable[[str], str] | None = None,
+    *,
+    executable: str | None = None,
 ) -> dict[str, Any]:
     """Generyczna sonda narzędzia CLI dostępnego w PATH.
 
     Args:
-        name: nazwa binarki szukanej przez ``shutil.which``.
+        name: nazwa binarki szukanej przez ``shutil.which`` (gdy nie podano ``executable``).
         version_args: argumenty wywołania zwracającego wersję (np. ``["--version"]``).
-            Gdy ``None`` — sprawdzamy tylko obecność w PATH, bez subprocessu.
+            Gdy ``None`` — sprawdzamy tylko obecność, bez subprocessu.
         version_parser: opcjonalny parser wyjścia (stdout/stderr) na łańcuch wersji;
             domyślnie ostatni token pierwszej niepustej linii.
+        executable: pełna ścieżka do binarki zamiast szukania po nazwie w PATH (np. wynik
+            :func:`find_tool` dla narzędzia zainstalowanego poza PATH). Gdy podana, pomijamy
+            ``shutil.which`` i ufamy wołającemu, że ścieżka istnieje.
 
     Returns:
         Słownik ``{"available": bool, "version": str}``. Odporny na wyjątki — gdy binarka
-        jest w PATH, lecz wywołanie wersji zawiedzie (timeout/OSError/parsowanie), zwraca
+        jest dostępna, lecz wywołanie wersji zawiedzie (timeout/OSError/parsowanie), zwraca
         ``available=False`` zamiast rzucać (jak reszta modułu).
     """
     result: dict[str, Any] = {"available": False, "version": ""}
-    resolved = shutil.which(name)
+    resolved = executable if executable is not None else shutil.which(name)
     if resolved is None:
         return result
     if not version_args:
@@ -51,13 +92,14 @@ def probe_tool(
         return result
     parser = version_parser or _default_version_parser
     try:
-        # Uruchamiamy rozwiązaną ścieżkę z which, nie gołą nazwę — brak ponownego
-        # przeszukiwania PATH i mniejsze ryzyko podmiany binarki między which a run.
+        # Uruchamiamy rozwiązaną ścieżkę (z which albo jawnie podaną), nie gołą nazwę —
+        # brak ponownego przeszukiwania PATH i mniejsze ryzyko podmiany binarki.
         proc = subprocess.run(
             [resolved, *version_args],
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=_SUBPROCESS_FLAGS,
         )
         # Niezerowy kod = wywołanie wersji zawiodło, choć binarka jest w PATH.
         # Kontrakt (jak reszta modułu) obiecuje wtedy available=False, version="".
@@ -97,6 +139,7 @@ def check_tesseract() -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=_SUBPROCESS_FLAGS,
         )
         # Niezerowy kod = nie ufamy wyjściu; zostawiamy languages=[] zamiast parsować błąd.
         if lang_proc.returncode != 0:

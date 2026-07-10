@@ -12,9 +12,14 @@ ciągnięcia ciężkich zależności.
 ## API
 
 ### `chodzkos_detection.tools`
-- `probe_tool(name, version_args=None, version_parser=None) -> dict` — generyczna sonda
-  binarki w PATH (`shutil.which` + opcjonalny odczyt wersji przez subprocess); odporna na
-  wyjątki (`{"available": bool, "version": str}`).
+- `probe_tool(name, version_args=None, version_parser=None, *, executable=None) -> dict` —
+  generyczna sonda binarki w PATH (`shutil.which` + opcjonalny odczyt wersji przez subprocess);
+  odporna na wyjątki (`{"available": bool, "version": str}`). `executable` (pełna ścieżka, np.
+  z `find_tool`) pomija `shutil.which` dla narzędzi zainstalowanych poza PATH.
+- `find_tool(name, extra_paths=()) -> str | None` — pełna ścieżka narzędzia: najpierw PATH
+  (`shutil.which`), potem `extra_paths` w kolejności (pierwszy istniejący plik); `None`, gdy
+  nigdzie. Do narzędzi poza PATH (np. Calibre w `C:\Calibre2`) — wołający dokłada kandydatów
+  z rejestru / znanych katalogów.
 - `check_tesseract() -> dict` — `{available, version, languages}`.
 - `check_poppler() -> bool`, `check_pandoc() -> bool`.
 - `check_tools() -> dict` — zbiorczy raport powyższych.
